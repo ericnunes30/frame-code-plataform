@@ -1,0 +1,32 @@
+FROM node:20-alpine
+
+# Instala ferramentas comuns de desenvolvimento
+RUN apk add --no-cache \
+    git \
+    curl \
+    bash \
+    python3 \
+    py3-pip \
+    gcc \
+    g++ \
+    make
+
+# Instala ferramentas globais comuns
+RUN npm install -g \
+    typescript \
+    @ts-node/node \
+    pnpm \
+    yarn
+
+# Cria diretório de workspace
+WORKDIR /workspace
+
+# Configura ambiente
+ENV NODE_ENV=development
+ENV PATH="/workspace/node_modules/.bin:${PATH}"
+
+# Expõe porta para comunicação (opcional)
+EXPOSE 3000
+
+# Mantém container rodando
+CMD ["tail", "-f", "/dev/null"]

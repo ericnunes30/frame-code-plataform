@@ -1,0 +1,22 @@
+{
+  "defaultImage": "node:20-alpine",
+  "workspaceBaseDir": ".workspaces",
+  "autoCleanup": true,
+  "sessionTimeout": 86400000,
+  "maxConcurrentWorkspaces": 5,
+  "docker": {
+    "networkMode": "bridge",
+    "portBindings": {},
+    "volumeBindings": {
+      ".": "/workspace"
+    },
+    "environment": {
+      "NODE_ENV": "development"
+    }
+  },
+  "persist": {
+    "enabled": true,
+    "path": ".workspaces",
+    "compression": true
+  }
+}
