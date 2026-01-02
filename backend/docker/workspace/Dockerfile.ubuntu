@@ -1,0 +1,32 @@
+﻿FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Base tools + git + build deps (para libs nativas do npm)
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    git \
+    bash \
+    openssh-client \
+    python3 \
+    python3-pip \
+    build-essential \
+  && rm -rf /var/lib/apt/lists/*
+
+# Node.js 20 (para rodar o agente dentro do container)
+RUN set -eux; \
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends nodejs; \
+  rm -rf /var/lib/apt/lists/*
+
+# Ferramentas globais comuns
+RUN npm install -g pnpm yarn typescript
+
+WORKDIR /repo
+
+ENV NODE_ENV=development
+
+CMD ["bash", "-lc", "tail -f /dev/null"]

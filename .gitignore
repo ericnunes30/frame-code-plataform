@@ -22,6 +22,7 @@ build/
 Thumbs.db
 
 # Workspaces
+.workspace/
 .workspaces/
 *.log
 
@@ -43,3 +44,8 @@ coverage/
 .dockerignore
 
 outputsrun-*
+# Monorepo outputs
+Backend/dist/
+Frontend/dist/
+_data/
+

@@ -1,0 +1,22 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      WORKSPACE_BASE_DIR: /data/workspaces
+      DEFAULT_DOCKER_IMAGE: frame-code/workspace-ubuntu:latest
+    volumes:
+      - ./_data/workspaces:/data/workspaces
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
