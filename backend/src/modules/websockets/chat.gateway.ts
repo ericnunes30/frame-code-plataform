@@ -1,4 +1,4 @@
-﻿import {
+import {
   WebSocketGateway,
   WebSocketServer,
   SubscribeMessage,
@@ -8,8 +8,9 @@
   MessageBody,
   ConnectedSocket,
 } from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
+import { Server, Socket } from 'socket.io';
+import { AgentRunnerService } from '../agents/agent-runner.service';
 import { WorkspaceManagerProvider } from '../common/workspace-manager.provider';
 
 function isChatNotFoundError(err: unknown): boolean {
@@ -36,7 +37,10 @@ export class ChatGateway
   private readonly logger = new Logger(ChatGateway.name);
   private readonly workspaceRooms = new Map<string, Set<string>>();
 
-  constructor(private readonly platform: WorkspaceManagerProvider) {}
+  constructor(
+    private readonly platform: WorkspaceManagerProvider,
+    private readonly agentRunner: AgentRunnerService
+  ) {}
 
   afterInit() {
     this.logger.log('WebSocket Gateway initialized');
@@ -140,21 +144,24 @@ export class ChatGateway
 
     this.logger.log(`Chat message from ${client.id} in workspace ${data.workspaceId}, chat ${data.chatId}`);
 
-    // Simulação temporária até integração real do agente.
-    setTimeout(async () => {
+    try {
+      const assistant = await this.agentRunner.sendAndWaitForAssistantMessage({
+        workspaceId: data.workspaceId,
+        chatId: data.chatId,
+        content: data.content,
+      });
+
       const agentMessage = {
-        id: crypto.randomUUID(),
+        id: assistant.id || crypto.randomUUID(),
         role: 'agent' as const,
-        content: `Agent not integrated yet. Echo: ${data.content}`,
+        content: assistant.content,
         timestamp: new Date(),
       };
 
       try {
         await chatManager.addMessage(data.chatId, agentMessage);
       } catch (err) {
-        if (isChatNotFoundError(err)) {
-          return;
-        }
+        if (isChatNotFoundError(err)) return;
         throw err;
       }
 
@@ -164,6 +171,10 @@ export class ChatGateway
         chatId: data.chatId,
         message: agentMessage,
       });
-    }, 300);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      client.emit('chat.error', { code: 'AGENT_ERROR', message, chatId: data.chatId });
+    }
   }
 }
+

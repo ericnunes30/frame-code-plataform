@@ -1,5 +1,6 @@
-﻿import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { WorkspaceManagerProvider } from '../common/workspace-manager.provider';
+import { AgentRunnerService } from '../agents/agent-runner.service';
 import { CreateChatDto, UpdateChatTitleDto, AddMessageDto } from './dto';
 import { SessionError, SessionMessage } from '../../platform/types';
 
@@ -11,7 +12,10 @@ function isChatNotFoundError(err: unknown): boolean {
 
 @Injectable()
 export class ChatsService {
-  constructor(private readonly platform: WorkspaceManagerProvider) {}
+  constructor(
+    private readonly platform: WorkspaceManagerProvider,
+    private readonly agentRunner: AgentRunnerService
+  ) {}
 
   private get workspaces() {
     return this.platform.getWorkspaces();
@@ -104,6 +108,37 @@ export class ChatsService {
       }
       throw err;
     }
+  }
+
+  async addMessageAndRunAgent(chatId: string, addMessageDto: AddMessageDto) {
+    const userMessage = await this.addMessage(chatId, addMessageDto);
+
+    const chat = await this.chatManager.getChat(chatId);
+    if (!chat) throw new NotFoundException('Chat not found');
+
+    const assistant = await this.agentRunner.sendAndWaitForAssistantMessage({
+      workspaceId: chat.workspaceId,
+      chatId,
+      content: addMessageDto.content,
+    });
+
+    const agentMessage: SessionMessage = {
+      id: assistant.id || crypto.randomUUID(),
+      role: 'agent',
+      content: assistant.content,
+      timestamp: new Date(),
+    };
+
+    try {
+      await this.chatManager.addMessage(chatId, agentMessage);
+    } catch (err) {
+      if (isChatNotFoundError(err)) {
+        throw new NotFoundException('Chat not found');
+      }
+      throw err;
+    }
+
+    return { userMessage, agentMessage };
   }
 }
 

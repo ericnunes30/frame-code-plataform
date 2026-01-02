@@ -78,4 +78,16 @@ export class ChatsController {
   ) {
     return await this.chatsService.addMessage(chatId, addMessageDto);
   }
+
+  /**
+   * Add a message and run the agent-runner
+   * POST /chats/:chatId/messages/agent
+   */
+  @Post(':chatId/messages/agent')
+  async addMessageAndRunAgent(
+    @Param('chatId') chatId: string,
+    @Body() addMessageDto: AddMessageDto
+  ) {
+    return await this.chatsService.addMessageAndRunAgent(chatId, addMessageDto);
+  }
 }

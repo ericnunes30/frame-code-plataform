@@ -28,6 +28,13 @@ npm run dev
 - Backend: `http://localhost:3000/api/v1`
 - WebSocket: `ws://localhost:3000/ws`
 
+## Integração com agentes (agent-runner)
+
+O backend integra com o `agent-runner` via **stdio JSONL** (processo filho) quando recebe `chat.send`.
+
+- Configure `AGENT_RUNNER_DIR` apontando para um checkout **buildado** do runner (precisa existir `dist/index.js`).
+- Configure `DEFAULT_AGENT_ADAPTER` (`echo` por padrão).
+
 ## Docker (API + UI)
 
 ```bash
@@ -54,4 +61,3 @@ Windows PowerShell:
 ```powershell
 .\scripts\build-workspace-images.ps1
 ```
-
