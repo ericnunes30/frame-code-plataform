@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
 import { useTasks, useWorkspaces } from '../hooks';
 
@@ -18,6 +18,7 @@ type WorkspaceRow = {
 
 const WorkspacesList = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { workspaces, loading, error } = useWorkspaces();
   const { tasks } = useTasks();
   const [query, setQuery] = useState('');
@@ -140,7 +141,11 @@ const WorkspacesList = () => {
           <div className="flex flex-col gap-1">
             <h1 className="text-2xl font-bold text-white tracking-tight">Workspaces</h1>
           </div>
-          <Link className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-lg text-sm font-medium" to="/create-workspace">
+          <Link
+            className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-lg text-sm font-medium"
+            to="/create-workspace"
+            state={{ backgroundLocation: location }}
+          >
             <span className="material-symbols-outlined text-[20px]">add</span>
             New Workspace
           </Link>

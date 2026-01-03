@@ -5,6 +5,7 @@
 import Docker from 'dockerode';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { PassThrough } from 'stream';
 import {
   DockerConfig,
   WorkspaceConfig,
@@ -253,9 +254,17 @@ export class DockerWorkspace {
           let stdout = '';
           let stderr = '';
 
-          stream.on('data', (chunk: Buffer) => {
-            const data = chunk.toString();
-            stdout += data;
+          const stdoutStream = new PassThrough();
+          const stderrStream = new PassThrough();
+
+          this.docker.modem.demuxStream(stream as any, stdoutStream, stderrStream);
+
+          stdoutStream.on('data', (chunk: Buffer) => {
+            stdout += chunk.toString('utf-8');
+          });
+
+          stderrStream.on('data', (chunk: Buffer) => {
+            stderr += chunk.toString('utf-8');
           });
 
           stream.on('error', (err: Error) => {
@@ -309,11 +318,43 @@ export class DockerWorkspace {
         tail,
         timestamps: true,
       });
-      return logs.toString('utf-8');
+      const buf = Buffer.isBuffer(logs) ? logs : Buffer.from(logs as any);
+      return this.demuxDockerLogsBuffer(buf).toString('utf-8');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new DockerError(`Failed to get logs: ${message}`, 'LOGS_FAILED', containerId);
     }
+  }
+
+  private demuxDockerLogsBuffer(buf: Buffer): Buffer {
+    // Docker multiplexed stream format:
+    // [0]=streamType(1=stdout,2=stderr), [1..3]=0, [4..7]=uint32be length, then <length> bytes payload.
+    if (buf.length < 8) return buf;
+
+    const chunks: Buffer[] = [];
+    let offset = 0;
+
+    while (offset + 8 <= buf.length) {
+      const streamType = buf[offset];
+      const b1 = buf[offset + 1];
+      const b2 = buf[offset + 2];
+      const b3 = buf[offset + 3];
+
+      // Heuristic: if header doesn't match expected format, treat as plain text.
+      if ((streamType !== 1 && streamType !== 2) || b1 !== 0 || b2 !== 0 || b3 !== 0) {
+        return buf;
+      }
+
+      const size = buf.readUInt32BE(offset + 4);
+      const start = offset + 8;
+      const end = start + size;
+      if (end > buf.length) break;
+      chunks.push(buf.subarray(start, end));
+      offset = end;
+    }
+
+    if (chunks.length === 0) return buf;
+    return Buffer.concat(chunks);
   }
 
   /**
@@ -345,7 +386,11 @@ export class DockerWorkspace {
             reject(new DockerError('No log stream returned', 'LOGS_STREAM_FAILED', containerId));
             return;
           }
-          resolve(stream as NodeJS.ReadableStream);
+          const out = new PassThrough();
+          this.docker.modem.demuxStream(stream as any, out, out);
+          (stream as any).on('end', () => out.end());
+          (stream as any).on('error', (e: any) => out.emit('error', e));
+          resolve(out as NodeJS.ReadableStream);
         }
       );
     });

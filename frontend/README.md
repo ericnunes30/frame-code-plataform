@@ -1,4 +1,4 @@
-# Frontend2 (Vite + React + Tailwind)
+# Frontend (Vite + React + Tailwind)
 
 This frontend uses Vite for development/build and talks to the backend via HTTP (`/api/v1`) and Socket.IO (`/ws`).
 

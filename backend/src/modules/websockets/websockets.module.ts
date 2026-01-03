@@ -9,4 +9,3 @@ import { LogsGateway } from './logs.gateway';
   exports: [ChatGateway, LogsGateway],
 })
 export class WebsocketsModule {}
-

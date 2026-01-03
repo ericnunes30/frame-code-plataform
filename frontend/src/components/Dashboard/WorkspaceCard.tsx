@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 type Props = {
   status: 'running' | 'stopped';
@@ -13,6 +13,7 @@ type Props = {
 
 const WorkspaceCard = ({ status, name, repo, created, id, disabled, onOpen }: Props) => {
   const isRunning = status === 'running';
+  const location = useLocation();
 
   return (
     <div
@@ -42,6 +43,7 @@ const WorkspaceCard = ({ status, name, repo, created, id, disabled, onOpen }: Pr
               className="p-1 hover:bg-[#2a3642] rounded text-text-muted hover:text-red-400"
               title="Delete"
               to={`/delete-workspace?workspaceId=${encodeURIComponent(id)}`}
+              state={{ backgroundLocation: location }}
             >
               <span className="material-symbols-outlined text-[18px]">delete</span>
             </Link>

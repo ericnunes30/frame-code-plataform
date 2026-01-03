@@ -1,7 +1,8 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 const Header = () => {
+  const location = useLocation();
   return (
     <header className="h-16 border-b border-border-dark flex items-center justify-between px-6 shrink-0 bg-[#111418]">
       <div className="flex items-center gap-2">
@@ -17,6 +18,7 @@ const Header = () => {
         <Link
           className="flex items-center gap-2 bg-primary hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
           to="/create-workspace"
+          state={{ backgroundLocation: location }}
         >
           <span className="material-symbols-outlined text-[20px]">add</span>
           Create Workspace
@@ -27,4 +29,3 @@ const Header = () => {
 };
 
 export default Header;
-

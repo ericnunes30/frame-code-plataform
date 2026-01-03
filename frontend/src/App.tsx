@@ -1,5 +1,5 @@
 import React from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { Route, Routes, useLocation, type Location } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import Images from './pages/Images';
 import Logs from './pages/Logs';
@@ -11,9 +11,13 @@ import WorkspaceDetails from './pages/WorkspaceDetails';
 import WorkspacesList from './pages/WorkspacesList';
 
 function App() {
+  const location = useLocation();
+  const state = location.state as { backgroundLocation?: Location } | null;
+  const backgroundLocation = state?.backgroundLocation;
+
   return (
     <div className="App">
-      <Routes>
+      <Routes location={backgroundLocation || location}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/login" element={<Login />} />
         <Route path="/settings" element={<Settings />} />
@@ -25,9 +29,15 @@ function App() {
         <Route path="/images" element={<Images />} />
         <Route path="/logs" element={<Logs />} />
       </Routes>
+
+      {backgroundLocation ? (
+        <Routes>
+          <Route path="/create-workspace" element={<CreateWorkspaceModal />} />
+          <Route path="/delete-workspace" element={<DeleteWorkspaceModal />} />
+        </Routes>
+      ) : null}
     </div>
   );
 }
 
 export default App;
-

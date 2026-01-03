@@ -18,8 +18,9 @@ export type Task = {
   image: string;
   repoPath: string;
   branch?: string;
+  agentRunnerPid?: string;
+  agentRunnerStartedAt?: string;
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string;
 };
-

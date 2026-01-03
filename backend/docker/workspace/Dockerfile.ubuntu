@@ -1,4 +1,4 @@
-﻿FROM ubuntu:22.04
+FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -24,6 +24,32 @@ RUN set -eux; \
 
 # Ferramentas globais comuns
 RUN npm install -g pnpm yarn typescript
+
+# Claude Code (CLI agent)
+RUN npm install -g @anthropic-ai/claude-code
+
+# Non-root user for running Claude Code safely
+RUN useradd -m -u 1000 -s /bin/bash dev
+
+# agent-runner (baixado do GitHub e buildado dentro da imagem)
+ARG AGENT_RUNNER_REPO=https://github.com/ericnunes30/agent-runner.git
+ARG AGENT_RUNNER_REF=feat/ws-runner-claude-hooks
+ARG AGENT_RUNNER_CACHEBUST=0
+
+RUN set -eux; \
+  echo "agent-runner cachebust=${AGENT_RUNNER_CACHEBUST}"; \
+  mkdir -p /opt/agent-runner; \
+  git clone --depth 1 --branch "${AGENT_RUNNER_REF}" "${AGENT_RUNNER_REPO}" /tmp/agent-runner; \
+  cd /tmp/agent-runner; \
+  npm install --no-fund --no-audit; \
+  npm run build; \
+  npm prune --omit=dev; \
+  cp -r dist package.json package-lock.json node_modules README.md /opt/agent-runner/; \
+  cd /; \
+  rm -rf /tmp/agent-runner; \
+  npm cache clean --force; \
+  printf '%s\n' '#!/usr/bin/env bash' 'exec node /opt/agent-runner/dist/index.js "$@"' > /usr/local/bin/agent-runner; \
+  chmod +x /usr/local/bin/agent-runner
 
 WORKDIR /repo
 

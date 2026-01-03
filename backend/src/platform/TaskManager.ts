@@ -109,7 +109,19 @@ export class TaskManager {
       image,
       repoPath,
       networkMode: this.config.docker.networkMode,
-      env: this.config.docker.environment,
+      env: {
+        ...this.config.docker.environment,
+        WORKSPACE_ID: workspaceId,
+        TASK_ID: taskId,
+        PLATFORM_WS_URL: process.env.PLATFORM_WS_URL || 'http://host.docker.internal:3000/ws',
+        PLATFORM_API_URL: process.env.PLATFORM_API_URL || 'http://host.docker.internal:3000/api/v1',
+        ...(process.env.ANTHROPIC_API_KEY ? { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY } : {}),
+        ...(process.env.ANTHROPIC_AUTH_TOKEN ? { ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN } : {}),
+        ...(process.env.ANTHROPIC_AUTH_TOKEN && !process.env.ANTHROPIC_API_KEY
+          ? { ANTHROPIC_API_KEY: process.env.ANTHROPIC_AUTH_TOKEN }
+          : {}),
+        ...(process.env.ANTHROPIC_BASE_URL ? { ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL } : {}),
+      },
     });
 
     task.containerId = containerId;
@@ -119,6 +131,9 @@ export class TaskManager {
 
     // Prepare repo inside container (git clone into /repo or init).
     await this.prepareRepoInContainer(task, workspace.repoUrl, params.branch || workspace.defaultBranch);
+
+    // Configure Claude Code hooks + start the agent-runner inside the task container.
+    await this.setupAgentInContainer(task);
 
     return task;
   }
@@ -170,6 +185,86 @@ export class TaskManager {
     await this.saveTask(task);
 
     return task;
+  }
+
+  private async setupAgentInContainer(task: Task): Promise<void> {
+    if (!task.containerId) return;
+
+    const wsUrl = process.env.PLATFORM_WS_URL || 'http://host.docker.internal:3000/ws';
+    const adapter = (process.env.DEFAULT_AGENT_ADAPTER || 'claude').toLowerCase();
+
+    // 1) Ensure project settings exist for Claude Code hooks.
+    const settingsJson = JSON.stringify(
+      {
+        hooks: {
+          SessionStart: [
+            {
+              matcher: '.*',
+              hooks: [{ type: 'command', command: 'node /opt/agent-runner/dist/hookClient.js' }],
+            },
+          ],
+          UserPromptSubmit: [
+            {
+              matcher: '.*',
+              hooks: [{ type: 'command', command: 'node /opt/agent-runner/dist/hookClient.js' }],
+            },
+          ],
+          PreToolUse: [
+            {
+              matcher: '.*',
+              hooks: [{ type: 'command', command: 'node /opt/agent-runner/dist/hookClient.js' }],
+            },
+          ],
+          PostToolUse: [
+            {
+              matcher: '.*',
+              hooks: [{ type: 'command', command: 'node /opt/agent-runner/dist/hookClient.js' }],
+            },
+          ],
+        },
+      },
+      null,
+      2
+    );
+
+    const writeSettings = [
+      'bash',
+      '-lc',
+      [
+        'set -euo pipefail',
+        // Ensure /repo is writable by the non-root user used to run Claude Code.
+        'id dev >/dev/null 2>&1 || true',
+        'chown -R dev:dev /repo || true',
+        'mkdir -p /repo/.claude',
+        `cat > /repo/.claude/settings.local.json <<'JSON'\n${settingsJson}\nJSON`,
+        'chown -R dev:dev /repo/.claude || true',
+      ].join('\n'),
+    ];
+
+    await this.docker.execCommand(task.containerId, writeSettings, { workDir: '/repo', timeout: 10_000 });
+
+    // 2) Start runner in the background (idempotency is handled by the backend gateway/session logic).
+    const startRunner = [
+      'bash',
+      '-lc',
+      [
+        'set -euo pipefail',
+        `export PLATFORM_WS_URL='${wsUrl}'`,
+        `export WORKSPACE_ID='${task.workspaceId}'`,
+        `export TASK_ID='${task.taskId}'`,
+        // Run the runner as non-root ("dev") so the claude CLI can use --dangerously-skip-permissions.
+        // docker exec output is NOT part of docker logs, so force stdout/stderr to PID1 fds.
+        `nohup su -s /bin/bash dev -c \"agent-runner --mode ws --adapter ${adapter} --ws-url '${wsUrl}' --workspace-id '${task.workspaceId}' --task-id '${task.taskId}'\" >>/proc/1/fd/1 2>>/proc/1/fd/2 & echo $!`,
+      ].join('\n'),
+    ];
+
+    const res = await this.docker.execCommand(task.containerId, startRunner, { workDir: '/repo', timeout: 10_000 });
+    const pid = (res.stdout || '').trim().split(/\s+/).pop();
+    if (pid) task.agentRunnerPid = pid;
+    task.agentRunnerStartedAt = new Date().toISOString();
+    task.updatedAt = task.agentRunnerStartedAt;
+    task.lastActivityAt = task.agentRunnerStartedAt;
+    await this.saveTask(task);
   }
 
   async startTask(taskId: string): Promise<Task> {

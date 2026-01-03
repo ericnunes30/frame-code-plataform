@@ -18,6 +18,7 @@ export function useChat(workspaceId: string, chatId?: string, options?: UseChatO
   const [connected, setConnected] = useState(false);
   const reconnectTimeout = useRef<number | undefined>();
   const pendingOutbound = useRef<Array<{ content: string; sentAt: number; id: string }>>([]);
+  const pendingCount = useRef(0);
 
   const connect = useCallback(() => {
     ws.connect();
@@ -40,7 +41,6 @@ export function useChat(workspaceId: string, chatId?: string, options?: UseChatO
           );
           if (idx >= 0) {
             pendingOutbound.current.splice(idx, 1);
-            setIsTyping(false);
             return;
           }
         }
@@ -50,14 +50,32 @@ export function useChat(workspaceId: string, chatId?: string, options?: UseChatO
           return [...prev, message];
         });
         options?.onInboundMessage?.(message);
-        setIsTyping(false);
+        if (message.role !== 'user') setIsTyping(false);
       }
     };
 
+    const handleError = (data: any) => {
+      if (data?.chatId && chatId && data.chatId !== chatId) return;
+      if (data?.workspaceId && data.workspaceId !== workspaceId) return;
+
+      setIsTyping(false);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: createMessageId(),
+          role: 'system',
+          content: data?.message ? `Error: ${String(data.message)}` : 'Error sending message',
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+    };
+
     ws.on('chat.message', handleMessage);
+    ws.on('chat.error', handleError);
 
     return () => {
       ws.off('chat.message', handleMessage);
+      ws.off('chat.error', handleError);
       ws.emit('unsubscribe', { channel: 'chat', workspaceId, chatId: chatId || 'default' });
     };
   }, [workspaceId, chatId, options]);
@@ -79,6 +97,7 @@ export function useChat(workspaceId: string, chatId?: string, options?: UseChatO
     const handleConnection = () => setConnected(true);
     const handleDisconnection = () => {
       setConnected(false);
+      setIsTyping(false);
       window.clearTimeout(reconnectTimeout.current);
       reconnectTimeout.current = window.setTimeout(() => connect(), 3000);
     };
@@ -100,6 +119,8 @@ export function useChat(workspaceId: string, chatId?: string, options?: UseChatO
       const id = createMessageId();
       const sentAt = Date.now();
       pendingOutbound.current.push({ content, sentAt, id });
+      pendingCount.current += 1;
+      setIsTyping(true);
 
       ws.emit('chat.send', { workspaceId, chatId, content });
       const outgoing: SessionMessage = { id, role: 'user', content, timestamp: new Date(sentAt).toISOString() };

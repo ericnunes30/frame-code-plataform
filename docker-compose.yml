@@ -9,7 +9,7 @@ services:
       WORKSPACE_BASE_DIR: /data/workspaces
       DEFAULT_DOCKER_IMAGE: frame-code/workspace-ubuntu:latest
       AGENT_RUNNER_DIR: /opt/agent-runner
-      DEFAULT_AGENT_ADAPTER: echo
+      DEFAULT_AGENT_ADAPTER: claude
     volumes:
       - ./_data/workspaces:/data/workspaces
       - /var/run/docker.sock:/var/run/docker.sock

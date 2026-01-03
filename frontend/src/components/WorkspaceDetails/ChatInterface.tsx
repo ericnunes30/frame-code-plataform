@@ -90,6 +90,8 @@ const ChatInterface = ({ messages, isTyping, connected, disabled, onSend }: Prop
             <span className="material-symbols-outlined text-xl">add_circle</span>
           </button>
           <textarea
+            id="chat-message"
+            name="message"
             className="w-full bg-transparent border-none text-sm text-white placeholder-[#5a6b7c] focus:ring-0 resize-none py-2.5 max-h-32 min-h-[44px]"
             placeholder={disabled ? 'Select a task to start…' : 'Ask DevBot to run commands or explain code...'}
             rows={1}
@@ -121,4 +123,3 @@ const ChatInterface = ({ messages, isTyping, connected, disabled, onSend }: Prop
 };
 
 export default ChatInterface;
-
