@@ -31,25 +31,34 @@ RUN npm install -g @anthropic-ai/claude-code
 # Non-root user for running Claude Code safely
 RUN useradd -m -u 1000 -s /bin/bash dev
 
-# agent-runner (baixado do GitHub e buildado dentro da imagem)
-ARG AGENT_RUNNER_REPO=https://github.com/ericnunes30/agent-runner.git
-ARG AGENT_RUNNER_REF=feat/ws-runner-claude-hooks
-ARG AGENT_RUNNER_CACHEBUST=0
+# code-runner (baixado do GitHub e buildado dentro da imagem)
+# Back-compat: ainda aceitamos AGENT_RUNNER_* args (imagens/CI antigos).
+ARG CODE_RUNNER_REPO=https://github.com/ericnunes30/agent-runner.git
+ARG CODE_RUNNER_REF=v0.2.0
+ARG CODE_RUNNER_CACHEBUST=0
+ARG AGENT_RUNNER_REPO=
+ARG AGENT_RUNNER_REF=
+ARG AGENT_RUNNER_CACHEBUST=
 
 RUN set -eux; \
-  echo "agent-runner cachebust=${AGENT_RUNNER_CACHEBUST}"; \
-  mkdir -p /opt/agent-runner; \
-  git clone --depth 1 --branch "${AGENT_RUNNER_REF}" "${AGENT_RUNNER_REPO}" /tmp/agent-runner; \
-  cd /tmp/agent-runner; \
+  : "${CODE_RUNNER_REPO:=${AGENT_RUNNER_REPO}}"; \
+  : "${CODE_RUNNER_REF:=${AGENT_RUNNER_REF}}"; \
+  : "${CODE_RUNNER_CACHEBUST:=${AGENT_RUNNER_CACHEBUST}}"; \
+  echo "code-runner cachebust=${CODE_RUNNER_CACHEBUST}"; \
+  mkdir -p /opt/code-runner; \
+  git clone --depth 1 --branch "${CODE_RUNNER_REF}" "${CODE_RUNNER_REPO}" /tmp/code-runner; \
+  cd /tmp/code-runner; \
   npm install --no-fund --no-audit; \
   npm run build; \
   npm prune --omit=dev; \
-  cp -r dist package.json package-lock.json node_modules README.md /opt/agent-runner/; \
+  cp -r dist package.json package-lock.json node_modules README.md /opt/code-runner/; \
   cd /; \
-  rm -rf /tmp/agent-runner; \
+  rm -rf /tmp/code-runner; \
   npm cache clean --force; \
-  printf '%s\n' '#!/usr/bin/env bash' 'exec node /opt/agent-runner/dist/index.js "$@"' > /usr/local/bin/agent-runner; \
-  chmod +x /usr/local/bin/agent-runner
+  ln -s /opt/code-runner /opt/agent-runner || true; \
+  printf '%s\n' '#!/usr/bin/env bash' 'exec node /opt/code-runner/dist/index.js "$@"' > /usr/local/bin/code-runner; \
+  chmod +x /usr/local/bin/code-runner; \
+  ln -s /usr/local/bin/code-runner /usr/local/bin/agent-runner || true
 
 WORKDIR /repo
 

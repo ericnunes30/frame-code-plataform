@@ -42,7 +42,7 @@ export class AgentRunnerClient extends EventEmitter {
     const entry = path.join(this.opts.runnerDir, 'dist', 'index.js');
     if (!existsSync(entry)) {
       throw new Error(
-        `agent-runner entry not found: ${entry}. Build the runner first or point AGENT_RUNNER_DIR to a built checkout.`
+        `code-runner entry not found: ${entry}. Build the runner first or point CODE_RUNNER_DIR (or legacy AGENT_RUNNER_DIR) to a built checkout.`
       );
     }
 
@@ -103,8 +103,8 @@ export class AgentRunnerClient extends EventEmitter {
   }
 
   async send(cmd: AgentCommandEnvelope): Promise<void> {
-    if (!this.child) throw new Error('agent-runner not started');
-    if (this.closed) throw new Error('agent-runner already closed');
+    if (!this.child) throw new Error('code-runner not started');
+    if (this.closed) throw new Error('code-runner already closed');
     this.child.stdin.write(`${JSON.stringify(cmd)}\n`);
   }
 

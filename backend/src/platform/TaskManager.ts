@@ -132,7 +132,7 @@ export class TaskManager {
     // Prepare repo inside container (git clone into /repo or init).
     await this.prepareRepoInContainer(task, workspace.repoUrl, params.branch || workspace.defaultBranch);
 
-    // Configure Claude Code hooks + start the agent-runner inside the task container.
+    // Configure Claude Code hooks + start the code-runner inside the task container.
     await this.setupAgentInContainer(task);
 
     return task;
@@ -175,6 +175,15 @@ export class TaskManager {
     const task = await this.getTask(taskId);
     if (!task) throw new Error(`Task ${taskId} not found`);
 
+    // Stop the runner before pausing the container
+    if (task.agentRunnerPid) {
+      try {
+        await this.stopRunner(taskId);
+      } catch {
+        // Ignore errors stopping runner when pausing task
+      }
+    }
+
     if (task.containerId) {
       await this.docker.pauseContainer(task.containerId);
     }
@@ -200,25 +209,25 @@ export class TaskManager {
           SessionStart: [
             {
               matcher: '.*',
-              hooks: [{ type: 'command', command: 'node /opt/agent-runner/dist/hookClient.js' }],
+              hooks: [{ type: 'command', command: 'node /opt/code-runner/dist/hookClient.js' }],
             },
           ],
           UserPromptSubmit: [
             {
               matcher: '.*',
-              hooks: [{ type: 'command', command: 'node /opt/agent-runner/dist/hookClient.js' }],
+              hooks: [{ type: 'command', command: 'node /opt/code-runner/dist/hookClient.js' }],
             },
           ],
           PreToolUse: [
             {
               matcher: '.*',
-              hooks: [{ type: 'command', command: 'node /opt/agent-runner/dist/hookClient.js' }],
+              hooks: [{ type: 'command', command: 'node /opt/code-runner/dist/hookClient.js' }],
             },
           ],
           PostToolUse: [
             {
               matcher: '.*',
-              hooks: [{ type: 'command', command: 'node /opt/agent-runner/dist/hookClient.js' }],
+              hooks: [{ type: 'command', command: 'node /opt/code-runner/dist/hookClient.js' }],
             },
           ],
         },
@@ -235,6 +244,9 @@ export class TaskManager {
         // Ensure /repo is writable by the non-root user used to run Claude Code.
         'id dev >/dev/null 2>&1 || true',
         'chown -R dev:dev /repo || true',
+        // Avoid polluting patch history with platform-internal Claude settings.
+        'mkdir -p /repo/.git/info || true',
+        "grep -qxF '.claude/' /repo/.git/info/exclude 2>/dev/null || echo '.claude/' >> /repo/.git/info/exclude",
         'mkdir -p /repo/.claude',
         `cat > /repo/.claude/settings.local.json <<'JSON'\n${settingsJson}\nJSON`,
         'chown -R dev:dev /repo/.claude || true',
@@ -254,7 +266,7 @@ export class TaskManager {
         `export TASK_ID='${task.taskId}'`,
         // Run the runner as non-root ("dev") so the claude CLI can use --dangerously-skip-permissions.
         // docker exec output is NOT part of docker logs, so force stdout/stderr to PID1 fds.
-        `nohup su -s /bin/bash dev -c \"agent-runner --mode ws --adapter ${adapter} --ws-url '${wsUrl}' --workspace-id '${task.workspaceId}' --task-id '${task.taskId}'\" >>/proc/1/fd/1 2>>/proc/1/fd/2 & echo $!`,
+        `nohup su -s /bin/bash dev -c \"code-runner --mode ws --adapter ${adapter} --ws-url '${wsUrl}' --workspace-id '${task.workspaceId}' --task-id '${task.taskId}'\" >>/proc/1/fd/1 2>>/proc/1/fd/2 & echo $!`,
       ].join('\n'),
     ];
 
@@ -327,6 +339,15 @@ export class TaskManager {
     const task = await this.getTask(taskId);
     if (!task) return;
 
+    // Stop the runner before destroying the task
+    if (task.agentRunnerPid) {
+      try {
+        await this.stopRunner(taskId);
+      } catch {
+        // Ignore errors stopping runner when destroying task
+      }
+    }
+
     if (task.containerId) {
       try {
         await this.docker.stopContainer(task.containerId);
@@ -353,5 +374,136 @@ export class TaskManager {
       creating: tasks.filter(t => t.status === 'creating').length,
       error: tasks.filter(t => t.status === 'error').length,
     };
+  }
+
+  // ==================== Runner Lifecycle Methods ====================
+
+  /**
+   * Start the agent runner within a task container
+   */
+  async startRunner(taskId: string): Promise<Task> {
+    const task = await this.getTask(taskId);
+    if (!task) {
+      throw new Error(`Task ${taskId} not found`);
+    }
+
+    if (!task.containerId) {
+      throw new Error(`Task ${taskId} has no container`);
+    }
+
+    // Check if container is running
+    const containerStatus = await this.docker.getContainerStatus(task.containerId);
+    if (containerStatus !== 'running') {
+      throw new Error(`Task ${taskId} container is not running (status: ${containerStatus})`);
+    }
+
+    // Check if runner is already running
+    if (task.agentRunnerPid) {
+      const pid = task.agentRunnerPid;
+      const checkResult = await this.docker.execCommand(task.containerId, ['bash', '-lc', `ps -p ${pid} || echo "not_running"`]);
+      if (checkResult.stdout.includes(pid) && !checkResult.stdout.includes('not_running')) {
+        // Runner is already running
+        task.updatedAt = new Date().toISOString();
+        await this.saveTask(task);
+        return task;
+      }
+    }
+
+    // Start the runner
+    await this.setupAgentInContainer(task);
+
+    // Return updated task
+    return await this.getTask(taskId) as Task;
+  }
+
+  /**
+   * Stop the agent runner within a task container
+   */
+  async stopRunner(taskId: string): Promise<Task> {
+    const task = await this.getTask(taskId);
+    if (!task) {
+      throw new Error(`Task ${taskId} not found`);
+    }
+
+    if (!task.containerId) {
+      throw new Error(`Task ${taskId} has no container`);
+    }
+
+    // Stop the runner if PID is known
+    if (task.agentRunnerPid) {
+      const pid = task.agentRunnerPid;
+      await this.docker.execCommand(task.containerId, ['bash', '-lc', `kill ${pid} 2>/dev/null || true`], { timeout: 5000 });
+    } else {
+      // Fallback: kill by process name/args
+      await this.docker.execCommand(
+        task.containerId,
+        ['bash', '-lc', 'pkill -f "code-runner --mode ws" || true; pkill -f "agent-runner --mode ws" || true'],
+        { timeout: 5000 }
+      );
+    }
+
+    // Update task
+    task.agentRunnerPid = undefined;
+    task.agentRunnerStoppedAt = new Date().toISOString();
+    task.updatedAt = task.agentRunnerStoppedAt;
+    await this.saveTask(task);
+
+    return task;
+  }
+
+  /**
+   * Restart the agent runner (stop + start)
+   */
+  async restartRunner(taskId: string): Promise<Task> {
+    await this.stopRunner(taskId);
+    return await this.startRunner(taskId);
+  }
+
+  /**
+   * Get the status of the agent runner
+   */
+  async getRunnerStatus(taskId: string): Promise<{
+    taskId: string;
+    workspaceId: string;
+    adapter: string;
+    state: 'running' | 'stopped' | 'unknown';
+    wsConnected: boolean;
+    pid?: string;
+    lastSeenAt?: string;
+    startedAt?: string;
+    stoppedAt?: string;
+  }> {
+    const task = await this.getTask(taskId);
+    if (!task) {
+      throw new Error(`Task ${taskId} not found`);
+    }
+
+    const result = {
+      taskId: task.taskId,
+      workspaceId: task.workspaceId,
+      adapter: (process.env.DEFAULT_AGENT_ADAPTER || 'claude').toLowerCase(),
+      state: 'unknown' as 'running' | 'stopped' | 'unknown',
+      wsConnected: false,
+      pid: task.agentRunnerPid,
+      lastSeenAt: task.lastActivityAt,
+      startedAt: task.agentRunnerStartedAt,
+      stoppedAt: task.agentRunnerStoppedAt,
+    };
+
+    if (!task.containerId) {
+      result.state = 'stopped';
+      return result;
+    }
+
+    // Check if runner process is running
+    if (task.agentRunnerPid) {
+      const pid = task.agentRunnerPid;
+      const checkResult = await this.docker.execCommand(task.containerId, ['bash', '-lc', `ps -p ${pid} >/dev/null 2>&1 && echo "running" || echo "not_running"`]);
+      result.state = checkResult.stdout.includes('running') ? 'running' : 'stopped';
+    } else {
+      result.state = 'stopped';
+    }
+
+    return result;
   }
 }

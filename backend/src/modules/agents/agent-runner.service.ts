@@ -6,6 +6,12 @@ import { AgentsGateway } from '../websockets/agents.gateway';
 
 type AgentAdapter = 'codex' | 'claude' | 'echo';
 
+type AgentCommandConfig = {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+};
+
 @Injectable()
 export class AgentRunnerService {
   private readonly logger = new Logger(AgentRunnerService.name);
@@ -16,15 +22,42 @@ export class AgentRunnerService {
   ) {}
 
   private getRunnerDir(): string {
-    const configured = process.env.AGENT_RUNNER_DIR;
+    const configured = process.env.CODE_RUNNER_DIR || process.env.AGENT_RUNNER_DIR;
     if (configured) return configured;
-    return path.resolve(process.cwd(), '..', 'agent-runner');
+    return path.resolve(process.cwd(), '..', 'code-runner');
   }
 
   private getDefaultAdapter(): AgentAdapter {
     const v = (process.env.DEFAULT_AGENT_ADAPTER || 'claude').toLowerCase();
     if (v === 'codex' || v === 'claude' || v === 'echo') return v;
     return 'claude';
+  }
+
+  private getDefaultAgentCommand(adapter: AgentAdapter): AgentCommandConfig {
+    if (adapter === 'echo') {
+      return { command: 'echo' };
+    }
+
+    if (adapter === 'codex') {
+      // Placeholder; can be overridden via env to point to a different CLI.
+      return { command: process.env.CODEX_BIN || 'codex' };
+    }
+
+    // Default: Claude Code CLI
+    return {
+      command: process.env.CLAUDE_BIN || 'claude',
+      args: [
+        '-p',
+        '--output-format',
+        'text',
+        '--dangerously-skip-permissions',
+        '--permission-mode',
+        'acceptEdits',
+        '--tools',
+        'default',
+      ],
+      env: {},
+    };
   }
 
   private getPlatformWsUrl(): string {
@@ -65,8 +98,8 @@ export class AgentRunnerService {
         `export WORKSPACE_ID='${params.workspaceId}'`,
         `export TASK_ID='${params.taskId}'`,
         'chown -R dev:dev /repo || true',
-        `nohup su -s /bin/bash dev -c \"agent-runner --mode ws --adapter ${adapter} --ws-url '${wsUrl}' --workspace-id '${params.workspaceId}' --task-id '${params.taskId}'\" >>/proc/1/fd/1 2>>/proc/1/fd/2 &`,
-        'echo "agent-runner started"',
+        `nohup su -s /bin/bash dev -c \"code-runner --mode ws --adapter ${adapter} --ws-url '${wsUrl}' --workspace-id '${params.workspaceId}' --task-id '${params.taskId}'\" >>/proc/1/fd/1 2>>/proc/1/fd/2 &`,
+        'echo \"code-runner started\"',
       ].join('\n'),
     ];
 
@@ -129,6 +162,7 @@ export class AgentRunnerService {
           taskId: params.chatId,
           workspaceId: params.workspaceId,
           repoPath: '/repo',
+          agent: this.getDefaultAgentCommand((params.adapter || this.getDefaultAdapter()) as AgentAdapter) as any,
           adapter: (params.adapter || this.getDefaultAdapter()) as any,
           mcpAllowlist: [],
         },
