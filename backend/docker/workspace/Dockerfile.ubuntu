@@ -33,7 +33,7 @@ RUN useradd -m -u 1000 -s /bin/bash dev
 
 # code-runner (baixado do GitHub e buildado dentro da imagem)
 # Back-compat: ainda aceitamos AGENT_RUNNER_* args (imagens/CI antigos).
-ARG CODE_RUNNER_REPO=https://github.com/ericnunes30/agent-runner.git
+ARG CODE_RUNNER_REPO=https://github.com/ericnunes30/code-runner.git
 ARG CODE_RUNNER_REF=v0.2.0
 ARG CODE_RUNNER_CACHEBUST=0
 ARG AGENT_RUNNER_REPO=

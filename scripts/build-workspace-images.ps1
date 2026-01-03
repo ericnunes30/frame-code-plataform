@@ -6,7 +6,7 @@ Write-Host "Building workspace images..."
 
 $codeRunnerRepo = $env:CODE_RUNNER_REPO
 if (-not $codeRunnerRepo) { $codeRunnerRepo = $env:AGENT_RUNNER_REPO }
-if (-not $codeRunnerRepo) { $codeRunnerRepo = "https://github.com/ericnunes30/agent-runner.git" }
+if (-not $codeRunnerRepo) { $codeRunnerRepo = "https://github.com/ericnunes30/code-runner.git" }
 
 $codeRunnerRef = $env:CODE_RUNNER_REF
 if (-not $codeRunnerRef) { $codeRunnerRef = $env:AGENT_RUNNER_REF }
